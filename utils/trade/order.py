@@ -6,6 +6,7 @@ MT5 交易订单模块
 
 import MetaTrader5 as mt5
 from typing import Optional, Dict, Any
+from datetime import datetime, timezone
 from ..logger import logger
 from ..exceptions import MT5OrderError, MT5SymbolError, MT5ValidationError
 
@@ -122,6 +123,15 @@ class MT5Order:
             # 7. 转换嵌套的 request 结构
             if "request" in result_dict and hasattr(result_dict["request"], "_asdict"):
                 result_dict["request"] = result_dict["request"]._asdict()
+
+            # 8. 将时间戳转换为带时区的 datetime 对象（Django 友好）
+            # 处理可能存在的时间字段
+            time_fields = ['time', 'time_setup', 'time_expiration', 'time_done']
+            for field in time_fields:
+                if field in result_dict and result_dict[field] and result_dict[field] > 0:
+                    result_dict[f'{field}_dt'] = datetime.fromtimestamp(
+                        result_dict[field], tz=timezone.utc
+                    )
 
             return result_dict
 

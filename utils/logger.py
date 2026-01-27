@@ -26,23 +26,33 @@ class MT5Logger:
         return cls._instance
 
     def __init__(self):
-        """初始化日志记录器"""
+        """
+        初始化日志记录器
+
+        如果 logger 已经有处理器（说明 Django 或其他框架可能接管了），
+        就不再重复添加默认的控制台输出。
+        这样在 Django 中，可以通过 settings.py 的 LOGGING 配置来控制 "MT5" 这个 logger。
+        """
         if not MT5Logger._initialized:
             self.logger = logging.getLogger("MT5")
-            self.logger.setLevel(logging.DEBUG)
 
-            # 创建控制台处理器
-            console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setLevel(logging.INFO)
+            # 只有当 logger 没有处理器时，才添加默认的控制台输出
+            # 这样避免与 Django 等框架的日志配置冲突
+            if not self.logger.handlers:
+                self.logger.setLevel(logging.DEBUG)
 
-            # 创建格式化器
-            formatter = logging.Formatter(
-                "[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-            )
-            console_handler.setFormatter(formatter)
+                # 创建控制台处理器
+                console_handler = logging.StreamHandler(sys.stdout)
+                console_handler.setLevel(logging.INFO)
 
-            # 添加处理器
-            self.logger.addHandler(console_handler)
+                # 创建格式化器
+                formatter = logging.Formatter(
+                    "[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+                )
+                console_handler.setFormatter(formatter)
+
+                # 添加处理器
+                self.logger.addHandler(console_handler)
 
             MT5Logger._initialized = True
 

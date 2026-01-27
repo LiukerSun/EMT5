@@ -17,18 +17,21 @@ class EMT5:
     整合了连接管理、账户信息、品种信息等功能
     """
 
-    def __init__(self, default_magic: int = 0):
+    def __init__(self, default_magic: int = 0, keep_alive: bool = False):
         """
         初始化 EMT5 实例
 
         参数:
             default_magic: 默认 EA 标识号，默认 0
+            keep_alive: 如果为 True，退出上下文管理器时不会断开连接（适配 Web 服务常驻模式）
+                       在 Django 等 Web 框架中，建议设置为 True，避免意外断开连接
         """
         self._connection = MT5Connection()
         self.account = MT5Account(self._connection)
         self.symbol = MT5Symbol(self._connection)
         self.order = MT5Order(self._connection, default_magic)
         self.default_magic = default_magic
+        self.keep_alive = keep_alive
 
     # ==================== 连接管理 ====================
 
@@ -646,8 +649,14 @@ class EMT5:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """退出时自动关闭连接"""
-        self.shutdown()
+        """
+        退出时根据配置决定是否关闭连接
+
+        如果 keep_alive=True（Web 服务模式），则不会断开连接
+        如果 keep_alive=False（脚本模式），则自动断开连接
+        """
+        if not self.keep_alive:
+            self.shutdown()
         return False
 
     def __del__(self):

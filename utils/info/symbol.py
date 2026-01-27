@@ -1,5 +1,6 @@
 import MetaTrader5 as mt5
 from typing import Optional
+from datetime import datetime, timezone
 from ..logger import logger
 
 
@@ -108,11 +109,13 @@ class MT5Symbol:
         返回:
             Dict: tick数据字典，包含以下字段：
                 - time: tick时间（Unix时间戳，秒）
+                - time_dt: tick时间（带时区的 datetime 对象，UTC）
                 - bid: 当前买入价（Bid）
                 - ask: 当前卖出价（Ask）
                 - last: 最后成交价
                 - volume: 成交量
                 - time_msc: tick时间（Unix时间戳，毫秒）
+                - time_msc_dt: tick时间（带时区的 datetime 对象，毫秒级精度，UTC）
                 - flags: tick标志
                 - volume_real: 实际成交量
             失败时返回 None
@@ -127,7 +130,7 @@ class MT5Symbol:
                 print(f"买价: {tick['bid']}")
                 print(f"卖价: {tick['ask']}")
                 print(f"点差: {tick['ask'] - tick['bid']}")
-                print(f"时间: {tick['time']}")
+                print(f"时间: {tick['time_dt']}")  # Django 友好的时区感知时间
 
             # 实时监控价格
             while True:
@@ -140,8 +143,9 @@ class MT5Symbol:
             1. 调用前必须先启用品种（使用 symbol_select）
             2. 返回的是最新的tick数据，不是历史数据
             3. time 字段是秒级时间戳，time_msc 是毫秒级时间戳
-            4. bid 用于卖出，ask 用于买入
-            5. 高频调用时注意性能影响
+            4. time_dt 和 time_msc_dt 是带时区的 datetime 对象（UTC），适配 Django
+            5. bid 用于卖出，ask 用于买入
+            6. 高频调用时注意性能影响
         """
         # 1. 检查连接状态
         if not self.connection.is_connected():
@@ -160,6 +164,19 @@ class MT5Symbol:
 
             # 4. 转换为字典格式
             tick_dict = tick._asdict()
+
+            # 5. 将时间戳转换为带时区的 datetime 对象（Django 友好）
+            # MT5 的 time 字段通常是 UTC 时间戳
+            if 'time' in tick_dict and tick_dict['time']:
+                tick_dict['time_dt'] = datetime.fromtimestamp(
+                    tick_dict['time'], tz=timezone.utc
+                )
+
+            # 6. 如果需要毫秒级精度
+            if 'time_msc' in tick_dict and tick_dict['time_msc']:
+                tick_dict['time_msc_dt'] = datetime.fromtimestamp(
+                    tick_dict['time_msc'] / 1000.0, tz=timezone.utc
+                )
 
             return tick_dict
 
