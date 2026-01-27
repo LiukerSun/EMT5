@@ -6,8 +6,8 @@ EMT5 - MetaTrader 5 Python 封装库
 
 from utils import logger
 from .core import MT5Connection
-from .info import MT5Account, MT5Symbol
-from .trade import MT5Order
+from .info import MT5Account, MT5Symbol, MT5History
+from .trade import MT5Order, MT5Calculator
 
 
 class EMT5:
@@ -30,6 +30,8 @@ class EMT5:
         self.account = MT5Account(self._connection)
         self.symbol = MT5Symbol(self._connection)
         self.order = MT5Order(self._connection, default_magic)
+        self.history = MT5History(self._connection)
+        self.calculator = MT5Calculator(self._connection)
         self.default_magic = default_magic
         self.keep_alive = keep_alive
 
