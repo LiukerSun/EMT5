@@ -1,106 +1,168 @@
-from utils import EMT5, logger
+"""
+EMT5 完整功能展示
+"""
+
+from pprint import pprint
+import sys
+import io
+
+# 设置 UTF-8 编码
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+
+from utils import EMT5
 import MetaTrader5 as mt5
-import time
+from datetime import datetime, timezone, timedelta
 
 
 def main():
-    """黄金交易示例 - 简化版本，只保留函数调用和逻辑判断"""
-    # 创建 EMT5 实例
-    mt5_client = EMT5()
+    """主函数"""
+    # 账户配置
+    config = {
+        "path": r"C:\Program Files\MetaTrader 5\terminal64.exe",
+        "login": 123,
+        "server": "123",
+        "password": "123",
+    }
 
-    # 账户信息
-    mt5_path = r"C:\Program Files\MetaTrader 5\terminal64.exe"
-    mt_id = 1234
-    mt_server = "123"
-    password = "123"
-
-    # 交易参数
     symbol = "GOLD#"
-    lot = 0.01
-    deviation = 20
-    magic = 123456
-    sl_distance = 500
-    tp_distance = 500
 
-    try:
-        # 1. 连接到 MT5
-        if not mt5_client.initialize(
-            path=mt5_path,
-            timeout=60000,
-            login=mt_id,
-            server=mt_server,
-            password=password,
-        ):
-            return
+    # 创建并连接
+    mt5_client: EMT5 = EMT5(keep_alive=False)
+    mt5_client.initialize(**config)
 
-        # 2. 启用品种
-        if not mt5_client.symbol_select(symbol, True):
-            return
+    # 1. 连接信息
+    version = mt5_client.get_version()
+    terminal = mt5_client.get_terminal_info()
+    pprint({"version": version, "terminal": terminal})
 
-        # 3. 获取品种信息
-        symbol_info = mt5_client.get_symbol_info(symbol)
-        if not symbol_info:
-            return
+    # 2. 账户信息
+    account = mt5_client.get_account_info()
+    pprint(account)
 
-        # 4. 创建买入订单
-        buy_request = mt5_client.create_market_buy_request(
-            symbol=symbol,
-            volume=lot,
-            deviation=deviation,
-            magic=magic,
-            comment="黄金买入",
-        )
+    # 3. 持仓信息
+    positions = mt5_client.get_positions()
+    pprint(positions)
 
-        # 5. 设置成交类型
-        filling_mode = symbol_info.get("filling_mode", 0)
-        if filling_mode & 2:
-            buy_request["type_filling"] = mt5.ORDER_FILLING_IOC
-        elif filling_mode & 1:
-            buy_request["type_filling"] = mt5.ORDER_FILLING_FOK
+    # 4. 挂单信息
+    orders = mt5_client.get_orders()
+    pprint(orders)
 
-        # 6. 设置止损止盈
-        point = symbol_info["point"]
-        buy_request["sl"] = buy_request["price"] - sl_distance * point
-        buy_request["tp"] = buy_request["price"] + tp_distance * point
+    # 5. 品种信息
+    mt5_client.symbol_select(symbol, True)
+    symbol_info = mt5_client.get_symbol_info(symbol)
+    pprint(symbol_info)
 
-        # 7. 检查订单
-        check_result = mt5_client.order_check(buy_request)
-        if not check_result or (
-            check_result["retcode"] != 0 and check_result["retcode"] != 10009
-        ):
-            return
+    # 6. 历史K线数据
+    now = datetime.now(timezone.utc)
+    date_from = now - timedelta(days=7)
+    bars = mt5_client.history.get_bars(
+        symbol=symbol,
+        timeframe=mt5.TIMEFRAME_H1,
+        date_from=date_from,
+        date_to=now
+    )
+    if bars:
+        pprint(bars[-5:])  # 最新5根K线
 
-        # 8. 发送订单
-        result = mt5_client.order_send(buy_request)
-        if not result or result["retcode"] != 10009:
-            return
+    # 7. Tick数据
+    ticks = mt5_client.history.get_ticks(
+        symbol=symbol,
+        date_from=now - timedelta(minutes=5),
+        date_to=now,
+        flags=mt5.COPY_TICKS_ALL
+    )
+    if ticks:
+        pprint(ticks[-3:])  # 最新3个Tick
 
-        # 9. 获取持仓号
-        position_id = result["order"]
+    # 8. 历史订单
+    history_orders = mt5_client.history.get_history_orders(
+        date_from=now - timedelta(days=7),
+        date_to=now
+    )
+    pprint(history_orders)
 
-        # 10. 等待后平仓
-        time.sleep(10)
+    # 9. 历史成交
+    history_deals = mt5_client.history.get_history_deals(
+        date_from=now - timedelta(days=7),
+        date_to=now
+    )
+    pprint(history_deals)
 
-        # 11. 创建平仓请求
-        close_request = mt5_client.create_market_sell_request(
-            symbol=symbol,
-            volume=lot,
-            deviation=deviation,
-            magic=magic,
-            comment="黄金平仓",
-            position=position_id,
-        )
+    # 10. 保证金计算
+    margin = mt5_client.calculator.calc_margin(symbol, 0.1, "buy")
+    pprint({"margin": margin})
 
-        # 12. 发送平仓订单
-        close_result = mt5_client.order_send(close_request)
-        if not close_result or close_result["retcode"] != 10009:
-            return
+    # 11. 盈利计算
+    entry_price = symbol_info['ask']
+    close_price = entry_price + 100 * symbol_info['point']
+    profit = mt5_client.calculator.calc_profit(
+        symbol, 0.1, entry_price, close_price, "buy"
+    )
+    pprint({"profit": profit})
 
-    except Exception as e:
-        logger.error(f"异常: {str(e)}")
+    # 12. 风险回报比
+    risk_reward = mt5_client.calculator.calc_risk_reward(
+        symbol=symbol,
+        volume=0.1,
+        entry_price=entry_price,
+        sl_price=entry_price - 50 * symbol_info['point'],
+        tp_price=entry_price + 100 * symbol_info['point'],
+        action="buy"
+    )
+    pprint(risk_reward)
 
-    finally:
-        mt5_client.shutdown()
+    # 13. 仓位计算
+    risk_amount = account['balance'] * 0.01  # 1% 风险
+    position_size = mt5_client.calculator.calc_position_size(
+        symbol=symbol,
+        risk_amount=risk_amount,
+        entry_price=entry_price,
+        sl_price=entry_price - 50 * symbol_info['point'],
+        action="buy"
+    )
+    pprint({"position_size": position_size})
+
+    # 14. 订单检查（Buy Limit挂单）
+    pending_request = {
+        'action': mt5.TRADE_ACTION_PENDING,
+        'symbol': symbol,
+        'volume': 0.01,
+        'type': mt5.ORDER_TYPE_BUY_LIMIT,
+        'price': symbol_info['bid'] - 100 * symbol_info['point'],
+        'sl': symbol_info['bid'] - 600 * symbol_info['point'],
+        'tp': symbol_info['bid'] + 400 * symbol_info['point'],
+        'deviation': 20,
+        'magic': 123456,
+        'comment': 'EMT5 测试',
+        'type_time': mt5.ORDER_TIME_GTC,
+        'type_filling': mt5.ORDER_FILLING_RETURN,
+    }
+    check_result = mt5_client.order_check(pending_request)
+    pprint(check_result)
+
+    # 15. 市价单请求构建
+    buy_request = mt5_client.create_market_buy_request(
+        symbol=symbol,
+        volume=0.01,
+        deviation=20,
+        magic=123456,
+        comment="市价买入测试"
+    )
+    pprint(buy_request)
+
+    sell_request = mt5_client.create_market_sell_request(
+        symbol=symbol,
+        volume=0.01,
+        deviation=20,
+        magic=123456,
+        comment="市价卖出测试"
+    )
+    pprint(sell_request)
+
+    # 断开连接
+    mt5_client.shutdown()
 
 
 if __name__ == "__main__":
