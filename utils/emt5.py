@@ -17,12 +17,18 @@ class EMT5:
     整合了连接管理、账户信息、品种信息等功能
     """
 
-    def __init__(self):
-        """初始化 EMT5 实例"""
+    def __init__(self, default_magic: int = 0):
+        """
+        初始化 EMT5 实例
+
+        参数:
+            default_magic: 默认 EA 标识号，默认 0
+        """
         self._connection = MT5Connection()
         self.account = MT5Account(self._connection)
         self.symbol = MT5Symbol(self._connection)
-        self.order = MT5Order(self._connection)
+        self.order = MT5Order(self._connection, default_magic)
+        self.default_magic = default_magic
 
     # ==================== 连接管理 ====================
 
@@ -408,7 +414,7 @@ class EMT5:
         return self.order.order_check(request)
 
     def create_market_buy_request(
-        self, symbol, volume, sl=0.0, tp=0.0, deviation=20, magic=0, comment=""
+        self, symbol, volume, sl=0.0, tp=0.0, deviation=20, magic=None, comment=""
     ):
         """
         创建市价买入请求
@@ -421,7 +427,7 @@ class EMT5:
             sl: 止损价格，0 表示不设置
             tp: 止盈价格，0 表示不设置
             deviation: 最大价格偏差（点数），默认 20
-            magic: EA 标识号，默认 0
+            magic: EA 标识号，None 表示使用默认值
             comment: 订单注释
 
         返回:
@@ -448,7 +454,7 @@ class EMT5:
         sl=0.0,
         tp=0.0,
         deviation=20,
-        magic=0,
+        magic=None,
         comment="",
         position=0,
     ):
@@ -463,7 +469,7 @@ class EMT5:
             sl: 止损价格，0 表示不设置
             tp: 止盈价格，0 表示不设置
             deviation: 最大价格偏差（点数），默认 20
-            magic: EA 标识号，默认 0
+            magic: EA 标识号，None 表示使用默认值
             comment: 订单注释
             position: 持仓票据号，用于平仓，0 表示开新仓
 
@@ -488,7 +494,7 @@ class EMT5:
         )
 
     def create_limit_buy_request(
-        self, symbol, volume, price, sl=0.0, tp=0.0, magic=0, comment=""
+        self, symbol, volume, price, sl=0.0, tp=0.0, magic=None, comment=""
     ):
         """
         创建限价买入挂单请求
@@ -501,7 +507,7 @@ class EMT5:
             price: 挂单价格（必须低于当前价）
             sl: 止损价格，0 表示不设置
             tp: 止盈价格，0 表示不设置
-            magic: EA 标识号，默认 0
+            magic: EA 标识号，None 表示使用默认值
             comment: 订单注释
 
         返回:
@@ -523,7 +529,7 @@ class EMT5:
         )
 
     def create_limit_sell_request(
-        self, symbol, volume, price, sl=0.0, tp=0.0, magic=0, comment=""
+        self, symbol, volume, price, sl=0.0, tp=0.0, magic=None, comment=""
     ):
         """
         创建限价卖出挂单请求
@@ -536,7 +542,7 @@ class EMT5:
             price: 挂单价格（必须高于当前价）
             sl: 止损价格，0 表示不设置
             tp: 止盈价格，0 表示不设置
-            magic: EA 标识号，默认 0
+            magic: EA 标识号，None 表示使用默认值
             comment: 订单注释
 
         返回:

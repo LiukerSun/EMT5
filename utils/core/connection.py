@@ -1,6 +1,8 @@
 import MetaTrader5 as mt5
+import time
 from typing import Optional
 from ..logger import logger
+from ..exceptions import MT5ConnectionError
 
 
 class MT5Connection:
@@ -20,6 +22,8 @@ class MT5Connection:
         server: Optional[str] = None,
         timeout: int = 60000,
         portable: bool = False,
+        retry: int = 3,
+        retry_delay: float = 2.0,
     ) -> bool:
         """
         建立与 MetaTrader 5 终端的连接
@@ -31,44 +35,66 @@ class MT5Connection:
             server: 交易服务器名称（可选）
             timeout: 连接超时时间（毫秒），默认 60000
             portable: 便携模式标志，默认 False
+            retry: 重试次数，默认 3
+            retry_delay: 重试间隔（秒），默认 2.0
 
         返回:
-            bool: 连接成功返回 True，否则返回 False
+            bool: 连接成功返回 True，否则抛出异常
+
+        异常:
+            MT5ConnectionError: 连接失败时抛出
         """
-        try:
-            # 根据参数构建初始化调用
-            if path is None and login is None:
-                result = mt5.initialize()
-            elif login is not None:
-                kwargs = {"login": login, "timeout": timeout, "portable": portable}
-                if password is not None:
-                    kwargs["password"] = password
-                if server is not None:
-                    kwargs["server"] = server
+        last_error = None
 
-                if path is not None:
-                    result = mt5.initialize(path, **kwargs)
+        for attempt in range(retry):
+            try:
+                # 根据参数构建初始化调用
+                if path is None and login is None:
+                    result = mt5.initialize()
+                elif login is not None:
+                    kwargs = {"login": login, "timeout": timeout, "portable": portable}
+                    if password is not None:
+                        kwargs["password"] = password
+                    if server is not None:
+                        kwargs["server"] = server
+
+                    if path is not None:
+                        result = mt5.initialize(path, **kwargs)
+                    else:
+                        result = mt5.initialize(**kwargs)
                 else:
-                    result = mt5.initialize(**kwargs)
-            else:
-                result = mt5.initialize(path)
+                    result = mt5.initialize(path)
 
-            if result:
-                self.connected = True
-                self.login = login
-                self.server = server
-                logger.info("已连接到 MetaTrader 5 终端")
-                return True
-            else:
-                error = mt5.last_error()
-                logger.error(f"initialize() 失败, 错误代码: {error}")
+                if result:
+                    self.connected = True
+                    self.login = login
+                    self.server = server
+                    logger.info("已连接到 MetaTrader 5 终端")
+                    return True
+                else:
+                    error = mt5.last_error()
+                    last_error = error
+                    logger.warning(f"initialize() 失败 (尝试 {attempt + 1}/{retry}), 错误代码: {error}")
+                    self.connected = False
+
+                    # 如果还有重试机会，等待后重试
+                    if attempt < retry - 1:
+                        time.sleep(retry_delay)
+
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(f"连接异常 (尝试 {attempt + 1}/{retry}): {str(e)}")
                 self.connected = False
-                return False
 
-        except Exception as e:
-            logger.error(f"连接异常: {str(e)}")
-            self.connected = False
-            return False
+                # 如果还有重试机会，等待后重试
+                if attempt < retry - 1:
+                    time.sleep(retry_delay)
+
+        # 所有重试都失败，抛出异常
+        error_msg = f"连接失败，已重试 {retry} 次"
+        if last_error:
+            raise MT5ConnectionError(error_msg, last_error if isinstance(last_error, int) else None)
+        raise MT5ConnectionError(error_msg)
 
     def shutdown(self) -> None:
         """关闭与 MetaTrader 5 终端的连接"""
@@ -91,11 +117,13 @@ class MT5Connection:
         获取终端信息
 
         返回:
-            dict: 终端信息字典，如果未连接则返回 None
+            dict: 终端信息字典
+
+        异常:
+            MT5ConnectionError: 未连接时抛出
         """
         if not self.connected:
-            logger.error("未连接到 MT5 终端")
-            return None
+            raise MT5ConnectionError("未连接到 MT5 终端")
 
         info = mt5.terminal_info()
         if info is not None:
@@ -107,10 +135,12 @@ class MT5Connection:
         获取 MetaTrader 5 版本信息
 
         返回:
-            tuple: 版本信息元组，如果未连接则返回 None
+            tuple: 版本信息元组
+
+        异常:
+            MT5ConnectionError: 未连接时抛出
         """
         if not self.connected:
-            logger.error("未连接到 MT5 终端")
-            return None
+            raise MT5ConnectionError("未连接到 MT5 终端")
 
         return mt5.version()

@@ -15,7 +15,7 @@ def main():
     password = "123"
 
     # 交易参数
-    symbol = "GOLD_"
+    symbol = "GOLD#"
     lot = 0.01
     deviation = 20
     magic = 123456

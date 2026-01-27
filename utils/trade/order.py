@@ -7,6 +7,7 @@ MT5 交易订单模块
 import MetaTrader5 as mt5
 from typing import Optional, Dict, Any
 from ..logger import logger
+from ..exceptions import MT5OrderError, MT5SymbolError, MT5ValidationError
 
 
 class MT5Order:
@@ -16,14 +17,43 @@ class MT5Order:
     封装了订单发送、订单检查等交易操作
     """
 
-    def __init__(self, connection):
+    def __init__(self, connection, default_magic: int = 0):
         """
         初始化 MT5Order 实例
 
         参数:
             connection: MT5Connection 实例
+            default_magic: 默认 EA 标识号，默认 0
         """
         self.connection = connection
+        self.default_magic = default_magic
+
+    def _get_filling_mode(self, symbol: str) -> int:
+        """
+        自动获取品种支持的成交模式
+
+        参数:
+            symbol: 交易品种名称
+
+        返回:
+            int: 成交模式常量 (ORDER_FILLING_IOC/FOK/RETURN)
+
+        异常:
+            MT5SymbolError: 无法获取品种信息时抛出
+        """
+        symbol_info = mt5.symbol_info(symbol)
+        if symbol_info is None:
+            raise MT5SymbolError(f"无法获取品种 {symbol} 的信息")
+
+        filling_mode = symbol_info.filling_mode
+
+        # 按优先级选择：IOC > FOK > RETURN
+        if filling_mode & 1:  # SYMBOL_FILLING_IOC
+            return mt5.ORDER_FILLING_IOC
+        elif filling_mode & 2:  # SYMBOL_FILLING_FOK
+            return mt5.ORDER_FILLING_FOK
+        else:  # SYMBOL_FILLING_RETURN
+            return mt5.ORDER_FILLING_RETURN
 
     def order_send(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -66,13 +96,11 @@ class MT5Order:
         """
         # 1. 检查连接状态
         if not self.connection.is_connected():
-            logger.error("未连接到 MT5 终端")
-            return None
+            raise MT5OrderError("未连接到 MT5 终端")
 
         # 2. 验证必要参数
         if not isinstance(request, dict):
-            logger.error("请求参数必须是字典类型")
-            return None
+            raise MT5ValidationError("请求参数必须是字典类型")
 
         # 3. 调用 MT5 API
         try:
@@ -81,8 +109,7 @@ class MT5Order:
             # 4. 错误处理
             if result is None:
                 error = mt5.last_error()
-                logger.error(f"order_send() 失败, 错误代码: {error}")
-                return None
+                raise MT5OrderError(f"order_send() 失败", error[0] if error else None)
 
             # 5. 检查返回码
             if result.retcode != mt5.TRADE_RETCODE_DONE:
@@ -98,9 +125,10 @@ class MT5Order:
 
             return result_dict
 
+        except MT5OrderError:
+            raise
         except Exception as e:
-            logger.error(f"执行异常: {str(e)}")
-            return None
+            raise MT5OrderError(f"执行异常: {str(e)}")
 
     def order_check(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -120,45 +148,75 @@ class MT5Order:
                 - margin_level: 操作后的保证金水平
                 - comment: 结果注释
                 - request: 原始请求结构
-            失败时返回 None
+
+        异常:
+            MT5OrderError: 检查失败时抛出
+            MT5ValidationError: 参数验证失败时抛出
         """
         # 1. 检查连接状态
         if not self.connection.is_connected():
-            logger.error("未连接到 MT5 终端")
-            return None
+            raise MT5OrderError("未连接到 MT5 终端")
 
         # 2. 验证必要参数
         if not isinstance(request, dict):
-            logger.error("请求参数必须是字典类型")
-            return None
+            raise MT5ValidationError("请求参数必须是字典类型")
 
-        # 3. 调用 MT5 API
+        # 3. Python 层面的基础检查
+        if "symbol" in request and "volume" in request:
+            try:
+                symbol_info = mt5.symbol_info(request["symbol"])
+                if symbol_info:
+                    # 检查交易量是否符合 volume_step
+                    volume = request["volume"]
+                    volume_min = symbol_info.volume_min
+                    volume_max = symbol_info.volume_max
+                    volume_step = symbol_info.volume_step
+
+                    if volume < volume_min:
+                        raise MT5ValidationError(f"交易量 {volume} 小于最小值 {volume_min}")
+                    if volume > volume_max:
+                        raise MT5ValidationError(f"交易量 {volume} 大于最大值 {volume_max}")
+
+                    # 检查交易量是否符合步进值
+                    if volume_step > 0:
+                        steps = round((volume - volume_min) / volume_step)
+                        expected_volume = volume_min + steps * volume_step
+                        if abs(volume - expected_volume) > 1e-8:
+                            raise MT5ValidationError(
+                                f"交易量 {volume} 不符合步进值 {volume_step}，建议使用 {expected_volume}"
+                            )
+            except MT5ValidationError:
+                raise
+            except Exception as e:
+                logger.warning(f"预检查时出现警告: {str(e)}")
+
+        # 4. 调用 MT5 API
         try:
             result = mt5.order_check(request)
 
-            # 4. 错误处理
+            # 5. 错误处理
             if result is None:
                 error = mt5.last_error()
-                logger.error(f"order_check() 失败, 错误代码: {error}")
-                return None
+                raise MT5OrderError(f"order_check() 失败", error[0] if error else None)
 
-            # 5. 检查返回码
+            # 6. 检查返回码
             if result.retcode != mt5.TRADE_RETCODE_DONE:
                 logger.warning(f"订单检查未通过, 返回码: {result.retcode}")
                 logger.warning(f"返回信息: {result.comment}")
 
-            # 6. 转换为字典
+            # 7. 转换为字典
             result_dict = result._asdict()
 
-            # 7. 转换嵌套的 request 结构
+            # 8. 转换嵌套的 request 结构
             if "request" in result_dict and hasattr(result_dict["request"], "_asdict"):
                 result_dict["request"] = result_dict["request"]._asdict()
 
             return result_dict
 
+        except MT5OrderError:
+            raise
         except Exception as e:
-            logger.error(f"执行异常: {str(e)}")
-            return None
+            raise MT5OrderError(f"执行异常: {str(e)}")
 
     def create_market_buy_request(
         self,
@@ -167,7 +225,7 @@ class MT5Order:
         sl: float = 0.0,
         tp: float = 0.0,
         deviation: int = 20,
-        magic: int = 0,
+        magic: int = None,
         comment: str = "",
     ) -> Dict[str, Any]:
         """
@@ -192,7 +250,7 @@ class MT5Order:
                 - 市场波动大时可适当增加此值
             magic: EA 标识号（Expert Advisor 魔术数字）
                 - 用于标识订单来源，方便管理和过滤订单
-                - 默认 0 表示手动交易
+                - None 表示使用默认值
             comment: 订单注释，最多 31 个字符
                 - 用于记录订单用途或备注信息
 
@@ -209,8 +267,10 @@ class MT5Order:
                 - magic: EA 标识号
                 - comment: 订单注释
                 - type_time: ORDER_TIME_GTC（Good Till Cancelled，取消前一直有效）
-                - type_filling: ORDER_FILLING_IOC（Immediate or Cancel，立即成交或取消）
-            失败时返回空字典 {}
+                - type_filling: 自动适配的成交类型
+
+        异常:
+            MT5SymbolError: 无法获取品种信息时抛出
 
         使用示例:
             # 基本用法：创建简单的市价买入请求
@@ -239,16 +299,22 @@ class MT5Order:
             1. 调用此方法前必须确保已连接到 MT5 终端
             2. 交易品种必须在市场观察窗口中启用（使用 symbol_select）
             3. 止损止盈价格必须符合品种的止损位要求（SYMBOL_TRADE_STOPS_LEVEL）
-            4. 返回的请求字典可能需要根据品种特性调整 type_filling 参数
+            4. type_filling 会自动根据品种特性选择合适的成交模式
             5. 建议使用 order_check() 验证请求的有效性后再发送
         """
         # 1. 获取当前市场价格（买入使用卖出价 Ask）
         tick = mt5.symbol_info_tick(symbol)
         if tick is None:
-            logger.error(f"无法获取 {symbol} 的价格信息")
-            return {}
+            raise MT5SymbolError(f"无法获取 {symbol} 的价格信息")
 
-        # 2. 构建交易请求字典
+        # 2. 自动获取成交模式
+        filling_mode = self._get_filling_mode(symbol)
+
+        # 3. 使用默认 magic 如果未指定
+        if magic is None:
+            magic = self.default_magic
+
+        # 4. 构建交易请求字典
         request = {
             "action": mt5.TRADE_ACTION_DEAL,  # 立即执行交易
             "symbol": symbol,  # 交易品种
@@ -261,7 +327,7 @@ class MT5Order:
             "magic": magic,  # EA 标识号
             "comment": comment,  # 订单注释
             "type_time": mt5.ORDER_TIME_GTC,  # 订单有效期：取消前一直有效
-            "type_filling": mt5.ORDER_FILLING_IOC,  # 成交类型：立即成交或取消
+            "type_filling": filling_mode,  # 自动适配的成交类型
         }
 
         return request
@@ -273,7 +339,7 @@ class MT5Order:
         sl: float = 0.0,
         tp: float = 0.0,
         deviation: int = 20,
-        magic: int = 0,
+        magic: int = None,
         comment: str = "",
         position: int = 0,
     ) -> Dict[str, Any]:
@@ -295,7 +361,7 @@ class MT5Order:
                 - 卖出订单的止盈价格必须低于当前价格
                 - 例如：当前价格 1.1000，止盈可设为 1.0950
             deviation: 最大价格偏差（点数），允许的滑点范围，默认 20 点
-            magic: EA 标识号，用于标识订单来源，默认 0
+            magic: EA 标识号，用于标识订单来源，None 表示使用默认值
             comment: 订单注释，最多 31 个字符
             position: 持仓票据号（用于平仓操作）
                 - 0 表示开新仓（做空）
@@ -304,7 +370,9 @@ class MT5Order:
 
         返回:
             Dict: 交易请求字典，包含所有必要的订单参数
-            失败时返回空字典 {}
+
+        异常:
+            MT5SymbolError: 无法获取品种信息时抛出
 
         使用示例:
             # 示例 1：开新仓（做空）
@@ -354,10 +422,16 @@ class MT5Order:
         # 1. 获取当前市场价格（卖出使用买入价 Bid）
         tick = mt5.symbol_info_tick(symbol)
         if tick is None:
-            logger.error(f"无法获取 {symbol} 的价格信息")
-            return {}
+            raise MT5SymbolError(f"无法获取 {symbol} 的价格信息")
 
-        # 2. 构建交易请求字典
+        # 2. 自动获取成交模式
+        filling_mode = self._get_filling_mode(symbol)
+
+        # 3. 使用默认 magic 如果未指定
+        if magic is None:
+            magic = self.default_magic
+
+        # 4. 构建交易请求字典
         request = {
             "action": mt5.TRADE_ACTION_DEAL,  # 立即执行交易
             "symbol": symbol,  # 交易品种
@@ -370,10 +444,10 @@ class MT5Order:
             "magic": magic,  # EA 标识号
             "comment": comment,  # 订单注释
             "type_time": mt5.ORDER_TIME_GTC,  # 订单有效期：取消前一直有效
-            "type_filling": mt5.ORDER_FILLING_IOC,  # 成交类型：立即成交或取消
+            "type_filling": filling_mode,  # 自动适配的成交类型
         }
 
-        # 3. 如果指定了持仓号，添加到请求中（用于平仓操作）
+        # 5. 如果指定了持仓号，添加到请求中（用于平仓操作）
         if position > 0:
             request["position"] = position
 
@@ -386,7 +460,7 @@ class MT5Order:
         price: float,
         sl: float = 0.0,
         tp: float = 0.0,
-        magic: int = 0,
+        magic: int = None,
         comment: str = "",
     ) -> Dict[str, Any]:
         """
@@ -409,7 +483,7 @@ class MT5Order:
                 - 0.0 表示不设置止盈
                 - 必须高于挂单价格
                 - 例如：挂单价 1.0950，止盈可设为 1.1000
-            magic: EA 标识号，用于标识订单来源，默认 0
+            magic: EA 标识号，用于标识订单来源，None 表示使用默认值
             comment: 订单注释，最多 31 个字符
 
         返回:
@@ -458,7 +532,14 @@ class MT5Order:
             5. 可以使用 order_send() 发送挂单，使用 order_cancel() 取消挂单
             6. type_filling 设置为 RETURN 表示部分成交后剩余部分继续挂单
         """
-        # 构建限价买入挂单请求
+        # 1. 自动获取成交模式
+        filling_mode = self._get_filling_mode(symbol)
+
+        # 2. 使用默认 magic 如果未指定
+        if magic is None:
+            magic = self.default_magic
+
+        # 3. 构建限价买入挂单请求
         request = {
             "action": mt5.TRADE_ACTION_PENDING,  # 挂单操作（不立即执行）
             "symbol": symbol,  # 交易品种
@@ -470,7 +551,7 @@ class MT5Order:
             "magic": magic,  # EA 标识号
             "comment": comment,  # 订单注释
             "type_time": mt5.ORDER_TIME_GTC,  # 订单有效期：取消前一直有效
-            "type_filling": mt5.ORDER_FILLING_RETURN,  # 成交类型：部分成交后剩余继续挂单
+            "type_filling": filling_mode,  # 自动适配的成交类型
         }
 
         return request
@@ -482,7 +563,7 @@ class MT5Order:
         price: float,
         sl: float = 0.0,
         tp: float = 0.0,
-        magic: int = 0,
+        magic: int = None,
         comment: str = "",
     ) -> Dict[str, Any]:
         """
@@ -494,12 +575,20 @@ class MT5Order:
             price: 挂单价格
             sl: 止损价格（0表示不设置）
             tp: 止盈价格（0表示不设置）
-            magic: EA 标识号
+            magic: EA 标识号，None 表示使用默认值
             comment: 订单注释
 
         返回:
             Dict: 交易请求字典
         """
+        # 1. 自动获取成交模式
+        filling_mode = self._get_filling_mode(symbol)
+
+        # 2. 使用默认 magic 如果未指定
+        if magic is None:
+            magic = self.default_magic
+
+        # 3. 构建限价卖出挂单请求
         request = {
             "action": mt5.TRADE_ACTION_PENDING,
             "symbol": symbol,
@@ -511,7 +600,7 @@ class MT5Order:
             "magic": magic,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_RETURN,
+            "type_filling": filling_mode,
         }
 
         return request

@@ -4,6 +4,7 @@
 使用工厂模式和单例模式管理多个 MT5 账户
 """
 
+import threading
 from typing import Dict, Optional, List, TYPE_CHECKING
 from ..logger import logger
 
@@ -32,6 +33,7 @@ class MT5AccountManager:
 
         self.accounts: Dict[str, EMT5] = {}
         self.current_account: Optional[str] = None
+        self._lock = threading.Lock()  # 线程锁
         self._initialized = True
 
     def add_account(
@@ -57,30 +59,35 @@ class MT5AccountManager:
         返回:
             bool: 添加成功返回 True
         """
-        # 延迟导入避免循环依赖
-        from ..emt5 import EMT5
+        with self._lock:
+            # 延迟导入避免循环依赖
+            from ..emt5 import EMT5
 
-        if name in self.accounts:
-            logger.warning(f"账户 '{name}' 已存在")
-            return False
-
-        client = EMT5()
-
-        if auto_connect:
-            if not client.initialize(
-                path=path, login=login, password=password, server=server
-            ):
-                logger.error(f"账户 '{name}' 连接失败")
+            if name in self.accounts:
+                logger.warning(f"账户 '{name}' 已存在")
                 return False
 
-        self.accounts[name] = client
+            client = EMT5()
 
-        # 如果是第一个账户，设为当前账户
-        if self.current_account is None:
-            self.current_account = name
+            if auto_connect:
+                try:
+                    if not client.initialize(
+                        path=path, login=login, password=password, server=server
+                    ):
+                        logger.error(f"账户 '{name}' 连接失败")
+                        return False
+                except Exception as e:
+                    logger.error(f"账户 '{name}' 连接异常: {str(e)}")
+                    return False
 
-        logger.info(f"账户 '{name}' 已添加")
-        return True
+            self.accounts[name] = client
+
+            # 如果是第一个账户，设为当前账户
+            if self.current_account is None:
+                self.current_account = name
+
+            logger.info(f"账户 '{name}' 已添加")
+            return True
 
     def remove_account(self, name: str) -> bool:
         """
@@ -92,22 +99,23 @@ class MT5AccountManager:
         返回:
             bool: 移除成功返回 True
         """
-        if name not in self.accounts:
-            logger.error(f"账户 '{name}' 不存在")
-            return False
+        with self._lock:
+            if name not in self.accounts:
+                logger.error(f"账户 '{name}' 不存在")
+                return False
 
-        # 断开连接
-        self.accounts[name].shutdown()
+            # 断开连接
+            self.accounts[name].shutdown()
 
-        # 移除账户
-        del self.accounts[name]
+            # 移除账户
+            del self.accounts[name]
 
-        # 如果移除的是当前账户，切换到第一个可用账户
-        if self.current_account == name:
-            self.current_account = next(iter(self.accounts), None)
+            # 如果移除的是当前账户，切换到第一个可用账户
+            if self.current_account == name:
+                self.current_account = next(iter(self.accounts), None)
 
-        logger.info(f"账户 '{name}' 已移除")
-        return True
+            logger.info(f"账户 '{name}' 已移除")
+            return True
 
     def switch_account(self, name: str) -> bool:
         """
@@ -119,13 +127,14 @@ class MT5AccountManager:
         返回:
             bool: 切换成功返回 True
         """
-        if name not in self.accounts:
-            logger.error(f"账户 '{name}' 不存在")
-            return False
+        with self._lock:
+            if name not in self.accounts:
+                logger.error(f"账户 '{name}' 不存在")
+                return False
 
-        self.current_account = name
-        logger.info(f"已切换到账户 '{name}'")
-        return True
+            self.current_account = name
+            logger.info(f"已切换到账户 '{name}'")
+            return True
 
     def get_account(self, name: Optional[str] = None) -> Optional[EMT5]:
         """
@@ -137,10 +146,11 @@ class MT5AccountManager:
         返回:
             EMT5: 账户实例，如果不存在返回 None
         """
-        if name is None:
-            name = self.current_account
+        with self._lock:
+            if name is None:
+                name = self.current_account
 
-        return self.accounts.get(name)
+            return self.accounts.get(name)
 
     def get_current_account(self) -> Optional[EMT5]:
         """获取当前账户实例"""
@@ -153,7 +163,8 @@ class MT5AccountManager:
         返回:
             List[str]: 账户别名列表
         """
-        return list(self.accounts.keys())
+        with self._lock:
+            return list(self.accounts.keys())
 
     def execute_on_all(self, func_name: str, *args, **kwargs) -> Dict[str, any]:
         """

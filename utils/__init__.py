@@ -10,6 +10,13 @@ from .info import MT5Account, MT5Symbol
 from .trade import MT5Order
 from .manager import MT5AccountManager
 from .logger import logger, MT5Logger
+from .exceptions import (
+    MT5Error,
+    MT5ConnectionError,
+    MT5OrderError,
+    MT5SymbolError,
+    MT5ValidationError,
+)
 
 __version__ = "1.0.0"
 __author__ = "EMT5 Team"
@@ -23,4 +30,9 @@ __all__ = [
     "MT5AccountManager",
     "logger",
     "MT5Logger",
+    "MT5Error",
+    "MT5ConnectionError",
+    "MT5OrderError",
+    "MT5SymbolError",
+    "MT5ValidationError",
 ]
