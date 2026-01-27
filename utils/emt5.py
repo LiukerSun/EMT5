@@ -4,6 +4,7 @@ EMT5 - MetaTrader 5 Python 封装库
 整合了连接管理、账户信息、品种信息等功能
 """
 
+from utils import logger
 from .core import MT5Connection
 from .info import MT5Account, MT5Symbol
 from .trade import MT5Order
