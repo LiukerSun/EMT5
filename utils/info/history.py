@@ -372,7 +372,8 @@ class MT5History:
             logger.error(f"获取Tick数据异常: {str(e)}")
             return None
 
-    def _convert_ticks_to_dict(self, ticks) -> List[Dict[str, Any]]:        """
+    def _convert_ticks_to_dict(self, ticks) -> List[Dict[str, Any]]:
+        """
         将 numpy 数组转换为字典列表，并添加时区感知时间
 
         参数:
