@@ -4,6 +4,7 @@
 使用工厂模式和单例模式管理多个 MT5 账户
 """
 
+from __future__ import annotations
 import threading
 from typing import Dict, Optional, List, TYPE_CHECKING
 from ..logger import logger

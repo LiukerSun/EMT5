@@ -158,3 +158,76 @@ class MT5Connection:
             raise MT5ConnectionError("未连接到 MT5 终端")
 
         return mt5.version()
+
+    def login(
+        self,
+        login: int,
+        password: Optional[str] = None,
+        server: Optional[str] = None,
+        timeout: int = 60000,
+    ) -> bool:
+        """
+        连接到指定的交易账户
+
+        此方法用于在已初始化的 MT5 终端中切换到不同的交易账户。
+        与 initialize() 不同,login() 不需要重新启动终端连接。
+
+        参数:
+            login: 交易账户号码(必填)
+            password: 交易账户密码(可选)
+                - 如果不设置,将自动使用终端数据库中保存的密码
+            server: 交易服务器名称(可选)
+                - 如果不设置,将自动使用上次使用的服务器
+            timeout: 连接超时时间(毫秒),默认 60000(60秒)
+
+        返回:
+            bool: 连接成功返回 True,失败返回 False
+
+        异常:
+            MT5ConnectionError: MT5 终端未初始化时抛出
+
+        使用示例:
+            # 示例 1: 使用保存的密码登录
+            mt5 = MT5Connection()
+            mt5.initialize()  # 先初始化终端
+            if mt5.login(17221085):
+                print("已连接到账户 #17221085")
+
+            # 示例 2: 指定密码和服务器
+            if mt5.login(25115284, password="password123", server="MetaQuotes-Demo"):
+                print("已切换到账户 #25115284")
+
+        注意事项:
+            1. 使用 login() 前必须先调用 initialize() 初始化终端
+            2. 如果密码错误或账户不存在,将返回 False
+            3. 成功登录后,账户信息会自动更新
+        """
+        # 检查终端是否已初始化
+        if not self.connected:
+            raise MT5ConnectionError("MT5 终端未初始化,请先调用 initialize()")
+
+        try:
+            # 构建登录参数
+            kwargs = {"login": login, "timeout": timeout}
+            if password is not None:
+                kwargs["password"] = password
+            if server is not None:
+                kwargs["server"] = server
+
+            # 调用 MT5 API 登录
+            result = mt5.login(**kwargs)
+
+            if result:
+                # 更新连接信息
+                self.login = login
+                self.server = server
+                logger.info(f"已成功登录到交易账户 #{login}")
+                return True
+            else:
+                error = mt5.last_error()
+                logger.error(f"登录失败,账户 #{login}, 错误代码: {error}")
+                return False
+
+        except Exception as e:
+            logger.error(f"登录异常: {str(e)}")
+            return False

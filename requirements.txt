@@ -1,0 +1,2 @@
+metatrader5==5.0.5509
+numpy==2.4.1
