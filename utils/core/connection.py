@@ -65,6 +65,20 @@ class MT5Connection:
                 else:
                     result = mt5.initialize(path)
 
+                # 如果初始化失败且错误是IPC通信失败，尝试启动MT5终端
+                if not result:
+                    error = mt5.last_error()
+                    if error[0] == -10001 and path and attempt == 0:  # IPC send failed
+                        logger.info(f"检测到MT5终端未运行，尝试启动: {path}")
+                        import subprocess
+                        try:
+                            subprocess.Popen([path], shell=False)
+                            logger.info("MT5终端启动中，等待5秒...")
+                            time.sleep(5)  # 等待MT5启动
+                            continue  # 重新尝试连接
+                        except Exception as start_error:
+                            logger.warning(f"启动MT5终端失败: {start_error}")
+
                 if result:
                     self.connected = True
                     self.login = login

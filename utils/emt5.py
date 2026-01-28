@@ -188,8 +188,12 @@ class EMT5:
     # ==================== 品种信息 ====================
 
     def get_symbols(self, group="*"):
-        """获取所有金融交易品种"""
+        """获取所有金融交易品种（完整信息）"""
         return self.symbol.get_symbols(group)
+
+    def get_symbol_names(self, group="*"):
+        """获取所有金融交易品种名称列表（仅名称）"""
+        return self.symbol.get_symbol_names(group)
 
     def get_symbol_info(self, symbol):
         """

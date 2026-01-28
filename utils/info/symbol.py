@@ -18,7 +18,7 @@ class MT5Symbol:
 
     def get_symbols(self, group: str = "*") -> Optional[tuple]:
         """
-        获取所有金融交易品种
+        获取所有金融交易品种（完整信息）
 
         参数:
             group: 品种筛选过滤器，默认 "*" 表示所有品种
@@ -39,6 +39,33 @@ class MT5Symbol:
             return symbols
         except Exception as e:
             logger.error(f"获取品种信息异常: {str(e)}")
+            return None
+
+    def get_symbol_names(self, group: str = "*") -> Optional[list]:
+        """
+        获取所有金融交易品种名称列表（仅名称）
+
+        参数:
+            group: 品种筛选过滤器，默认 "*" 表示所有品种
+
+        返回:
+            list: 品种名称列表，例如 ["EURUSD", "GBPUSD", "GOLD#"]
+                 如果未连接或失败则返回 None
+        """
+        if not self.connection.is_connected():
+            logger.error("未连接到 MT5 终端")
+            return None
+
+        try:
+            symbols = mt5.symbols_get(group=group)
+            if symbols is None:
+                error = mt5.last_error()
+                logger.error(f"symbols_get() 失败, 错误代码: {error}")
+                return None
+            # 只提取品种名称
+            return [symbol.name for symbol in symbols]
+        except Exception as e:
+            logger.error(f"获取品种名称异常: {str(e)}")
             return None
 
     def get_symbol_info(self, symbol: str) -> Optional[dict]:
