@@ -200,10 +200,7 @@ class EMT5:
             check = mt5.order("EURUSD").market_buy(0.1).check()
         """
         return OrderRequestBuilder(
-            symbol,
-            self._connection,
-            self.executor,
-            self._default_magic
+            symbol, self._connection, self.executor, self._default_magic
         )
 
     # ==================== 上下文管理器 ====================

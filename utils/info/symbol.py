@@ -194,15 +194,15 @@ class MT5Symbol:
 
             # 5. 将时间戳转换为带时区的 datetime 对象（Django 友好）
             # MT5 的 time 字段通常是 UTC 时间戳
-            if 'time' in tick_dict and tick_dict['time']:
-                tick_dict['time_dt'] = datetime.fromtimestamp(
-                    tick_dict['time'], tz=timezone.utc
+            if "time" in tick_dict and tick_dict["time"]:
+                tick_dict["time_dt"] = datetime.fromtimestamp(
+                    tick_dict["time"], tz=timezone.utc
                 )
 
             # 6. 如果需要毫秒级精度
-            if 'time_msc' in tick_dict and tick_dict['time_msc']:
-                tick_dict['time_msc_dt'] = datetime.fromtimestamp(
-                    tick_dict['time_msc'] / 1000.0, tz=timezone.utc
+            if "time_msc" in tick_dict and tick_dict["time_msc"]:
+                tick_dict["time_msc_dt"] = datetime.fromtimestamp(
+                    tick_dict["time_msc"] / 1000.0, tz=timezone.utc
                 )
 
             return tick_dict

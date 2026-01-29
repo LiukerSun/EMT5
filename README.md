@@ -350,28 +350,196 @@ def get_account_view(request):
     return JsonResponse(account)
 ```
 
+## API 认证
+
+项目提供基于 Token 的 API 认证系统。Token 只能通过命令行生成，确保安全性。
+
+### 初始化数据库
+
+```bash
+# 创建迁移文件
+python manage.py makemigrations authentication
+
+# 执行迁移
+python manage.py migrate
+```
+
+### Token 管理命令
+
+```bash
+# 创建 Token（永不过期）
+python manage.py token create <name>
+
+# 创建 Token（指定过期天数）
+python manage.py token create <name> --expires 30
+
+# 创建 Token（带描述）
+python manage.py token create <name> --expires 30 --description "用于测试"
+
+# 列出所有 Token
+python manage.py token list
+
+# 查看 Token 详情
+python manage.py token info <token_id>
+
+# 撤销 Token
+python manage.py token revoke <token_id>
+```
+
+### 示例
+
+```bash
+# 创建一个 30 天后过期的 API Token
+$ python manage.py token create my-api-token --expires 30
+
+============================================================
+Token 创建成功！
+============================================================
+
+ID:       1
+名称:     my-api-token
+创建时间: 2024-01-28 12:00:00
+过期时间: 2024-02-27 12:00:00
+
+------------------------------------------------------------
+请妥善保存以下 Token，它只会显示一次：
+------------------------------------------------------------
+
+4bad13e23fab864a01ac1fd794fb608acab1447e68e378b31b9523058419cc90
+============================================================
+```
+
+### API 调用
+
+在请求头中携带 Token：
+
+```bash
+# 使用 Bearer 格式
+curl -H "Authorization: Bearer <your-token>" http://localhost:8000/api/xxx
+
+# 或使用 Token 格式
+curl -H "Authorization: Token <your-token>" http://localhost:8000/api/xxx
+```
+
+### 豁免路径
+
+以下路径不需要 Token 认证：
+- `/admin/` - Django 管理后台
+- `/api/docs/` - Swagger 文档
+- `/api/redoc/` - ReDoc 文档
+- `/api/v1/health/` - 健康检查端点
+
+### 在视图中获取 Token 信息
+
+```python
+def my_view(request):
+    # 中间件会将验证通过的 Token 附加到 request 对象
+    token = request.api_token
+    print(f"请求来自: {token.name}")
+    print(f"Token 创建时间: {token.created_at}")
+```
+
+## API 文档
+
+项目使用 drf-spectacular 自动生成 OpenAPI 3.0 文档。
+
+### 访问文档
+
+启动服务后访问：
+
+- **Swagger UI**: http://localhost:8000/api/docs/
+- **ReDoc**: http://localhost:8000/api/redoc/
+- **OpenAPI Schema**: http://localhost:8000/api/schema/
+
+### API 端点概览
+
+| 分类 | 端点 | 方法 | 说明 | 需登录 |
+|------|------|------|------|--------|
+| Health | `/api/v1/health/` | GET | 健康检查 | 否 |
+| Account | `/api/v1/account/login/` | POST | 登录交易账户 | 否 |
+| Account | `/api/v1/account/` | GET | 获取账户信息 | 是 |
+| Symbol | `/api/v1/symbols/` | GET | 获取品种列表 | 否 |
+| Symbol | `/api/v1/symbols/{symbol}/` | GET | 获取品种详情 | 否 |
+| Symbol | `/api/v1/symbols/{symbol}/tick/` | GET | 获取实时报价 | 否 |
+| Position | `/api/v1/positions/` | GET | 获取持仓列表 | 是 |
+| Position | `/api/v1/positions/{ticket}/` | GET | 获取持仓详情 | 是 |
+| Position | `/api/v1/orders/` | GET | 获取挂单列表 | 是 |
+| Trade | `/api/v1/trade/buy/` | POST | 市价买入 | 是 |
+| Trade | `/api/v1/trade/sell/` | POST | 市价卖出 | 是 |
+| Trade | `/api/v1/trade/close/` | POST | 平仓 | 是 |
+| Trade | `/api/v1/trade/modify/` | POST | 修改止损止盈 | 是 |
+| History | `/api/v1/history/bars/` | GET | 获取K线数据 | 是 |
+| History | `/api/v1/history/deals/` | GET | 获取历史成交 | 是 |
+| Calc | `/api/v1/calc/margin/` | GET | 计算保证金 | 是 |
+| Calc | `/api/v1/calc/profit/` | GET | 计算盈亏 | 是 |
+
+### 登录流程
+
+1. 调用健康检查确认 MT5 终端已连接
+2. 调用登录接口登录交易账户
+3. 登录成功后可调用其他需要登录的接口
+
+```bash
+# 1. 检查状态
+curl http://localhost:8000/api/v1/health/
+
+# 2. 登录账户
+curl -X POST http://localhost:8000/api/v1/account/login/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-token>" \
+  -d '{"login": 12345678, "password": "your_password", "server": "XMGlobal-MT5"}'
+
+# 3. 获取账户信息
+curl -H "Authorization: Bearer <your-token>" http://localhost:8000/api/v1/account/
+```
+
+### 启动服务
+
+```bash
+# 开发服务器
+python manage.py runserver
+
+# 指定端口
+python manage.py runserver 0.0.0.0:8080
+```
+
 ## 项目结构
 
 ```
-utils/
-├── emt5.py                    # 主入口类
-├── core/
-│   ├── connection.py          # 连接管理
-│   ├── decorators.py          # 通用装饰器
-│   └── converters.py          # 数据转换工具
-├── info/
-│   ├── account.py             # 账户信息
-│   ├── symbol.py              # 品种信息
-│   ├── history.py             # 历史数据
-│   └── position.py            # 持仓和挂单
-├── trade/
-│   ├── request_builder.py     # 订单构建器
-│   ├── executor.py            # 订单执行器
-│   └── calculator.py          # 交易计算
-├── manager/
-│   └── account_manager.py     # 多账户管理
-├── exceptions.py              # 自定义异常
-└── logger.py                  # 日志系统
+EMT5/
+├── utils/                         # MT5 封装库
+│   ├── emt5.py                    # 主入口类
+│   ├── core/
+│   │   ├── connection.py          # 连接管理
+│   │   ├── decorators.py          # 通用装饰器
+│   │   └── converters.py          # 数据转换工具
+│   ├── info/
+│   │   ├── account.py             # 账户信息
+│   │   ├── symbol.py              # 品种信息
+│   │   ├── history.py             # 历史数据
+│   │   └── position.py            # 持仓和挂单
+│   ├── trade/
+│   │   ├── request_builder.py     # 订单构建器
+│   │   ├── executor.py            # 订单执行器
+│   │   └── calculator.py          # 交易计算
+│   ├── manager/
+│   │   └── account_manager.py     # 多账户管理
+│   ├── exceptions.py              # 自定义异常
+│   └── logger.py                  # 日志系统
+├── api_server/                    # Django 项目配置
+│   ├── settings.py                # Django 设置
+│   ├── urls.py                    # URL 路由
+│   ├── api_urls.py                # API 路由
+│   ├── views.py                   # API 视图
+│   ├── serializers.py             # 序列化器
+│   ├── wsgi.py
+│   └── asgi.py
+├── authentication/                # API 认证模块
+│   ├── models.py                  # APIToken 模型
+│   ├── middleware.py              # Token 认证中间件
+│   └── management/commands/
+│       └── token.py               # Token 管理命令
+└── manage.py
 ```
 
 ## 异常处理

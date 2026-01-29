@@ -601,3 +601,89 @@ class MT5History:
         except Exception as e:
             logger.error(f"获取历史成交异常: {str(e)}")
             return None
+
+    def get_history_deals_total(
+        self,
+        date_from: Union[datetime, int],
+        date_to: Union[datetime, int],
+    ) -> Optional[int]:
+        """
+        获取历史成交总数
+
+        参数:
+            date_from: 起始时间（datetime 对象或时间戳）
+            date_to: 结束时间（datetime 对象或时间戳）
+
+        返回:
+            int: 历史成交总数，失败时返回 None
+
+        使用示例:
+            from datetime import datetime, timezone
+
+            start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+            end = datetime(2024, 12, 31, tzinfo=timezone.utc)
+            total = history.get_history_deals_total(start, end)
+            print(f"历史成交总数: {total}")
+        """
+        if not self.connection.is_connected():
+            logger.error("未连接到 MT5 终端")
+            return None
+
+        try:
+            if isinstance(date_from, datetime):
+                if date_from.tzinfo is None:
+                    date_from = date_from.replace(tzinfo=timezone.utc)
+
+            if isinstance(date_to, datetime):
+                if date_to.tzinfo is None:
+                    date_to = date_to.replace(tzinfo=timezone.utc)
+
+            total = mt5.history_deals_total(date_from, date_to)
+            return total
+
+        except Exception as e:
+            logger.error(f"获取历史成交总数异常: {str(e)}")
+            return None
+
+    def get_history_orders_total(
+        self,
+        date_from: Union[datetime, int],
+        date_to: Union[datetime, int],
+    ) -> Optional[int]:
+        """
+        获取历史订单总数
+
+        参数:
+            date_from: 起始时间（datetime 对象或时间戳）
+            date_to: 结束时间（datetime 对象或时间戳）
+
+        返回:
+            int: 历史订单总数，失败时返回 None
+
+        使用示例:
+            from datetime import datetime, timezone
+
+            start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+            end = datetime(2024, 12, 31, tzinfo=timezone.utc)
+            total = history.get_history_orders_total(start, end)
+            print(f"历史订单总数: {total}")
+        """
+        if not self.connection.is_connected():
+            logger.error("未连接到 MT5 终端")
+            return None
+
+        try:
+            if isinstance(date_from, datetime):
+                if date_from.tzinfo is None:
+                    date_from = date_from.replace(tzinfo=timezone.utc)
+
+            if isinstance(date_to, datetime):
+                if date_to.tzinfo is None:
+                    date_to = date_to.replace(tzinfo=timezone.utc)
+
+            total = mt5.history_orders_total(date_from, date_to)
+            return total
+
+        except Exception as e:
+            logger.error(f"获取历史订单总数异常: {str(e)}")
+            return None
